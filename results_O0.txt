@@ -1,0 +1,46 @@
+Algorithm                 Threads     Time_ms     Result      Check
+std::reduce (no policy)   1           0.191       5040533     OK
+std::reduce (seq)         1           0.218       5040533     OK
+std::reduce (unseq)       1           0.298       5040533     OK
+std::reduce (par)         auto        0.099       5040533     OK
+std::reduce (par_unseq)   auto        0.110       5040533     OK
+custom K=1                1           0.246       5040533     OK
+custom K=2                2           0.142       5040533     OK
+custom K=4                4           0.109       5040533     OK
+custom K=8                8           0.130       5040533     OK
+custom K=16               16          0.188       5040533     OK
+custom K=32               32          0.330       5040533     OK
+custom K=128              128         1.378       5040533     OK
+custom K=256              256         2.797       5040533     OK
+custom K=512              512         7.634       5040533     OK
+custom K=1024             1024        12.650      5040533     OK
+std::reduce (no policy)   1           2.168       50545948    OK
+std::reduce (seq)         1           2.681       50545948    OK
+std::reduce (unseq)       1           3.373       50545948    OK
+std::reduce (par)         auto        1.010       50545948    OK
+std::reduce (par_unseq)   auto        1.294       50545948    OK
+custom K=1                1           2.496       50545948    OK
+custom K=2                2           1.240       50545948    OK
+custom K=4                4           1.184       50545948    OK
+custom K=8                8           1.067       50545948    OK
+custom K=16               16          0.990       50545948    OK
+custom K=32               32          0.965       50545948    OK
+custom K=128              128         2.092       50545948    OK
+custom K=256              256         3.477       50545948    OK
+custom K=512              512         7.756       50545948    OK
+custom K=1024             1024        19.742      50545948    OK
+std::reduce (no policy)   1           23.178      505095805   OK
+std::reduce (seq)         1           25.309      505095805   OK
+std::reduce (unseq)       1           34.309      505095805   OK
+std::reduce (par)         auto        8.026       505095805   OK
+std::reduce (par_unseq)   auto        11.187      505095805   OK
+custom K=1                1           34.329      505095805   OK
+custom K=2                2           16.230      505095805   OK
+custom K=4                4           9.042       505095805   OK
+custom K=8                8           8.286       505095805   OK
+custom K=16               16          8.691       505095805   OK
+custom K=32               32          9.076       505095805   OK
+custom K=128              128         9.192       505095805   OK
+custom K=256              256         11.621      505095805   OK
+custom K=512              512         14.921      505095805   OK
+custom K=1024             1024        24.878      505095805   OK

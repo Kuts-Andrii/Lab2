@@ -1,0 +1,62 @@
+Compiler: 15.2.0
+Run: O3, hardware threads: 8
+Time = median of 5 runs of one reduce call, ms (data loading not included)
+
+Sequence size: 100000
+Algorithm                 Threads     Time, ms    x best K    Result      Check
+std::reduce (no policy)   1           0.202       -           5040533     OK
+std::reduce (seq)         1           0.231       -           5040533     OK
+std::reduce (unseq)       1           0.311       -           5040533     OK
+std::reduce (par)         auto        0.160       -           5040533     OK
+std::reduce (par_unseq)   auto        0.269       -           5040533     OK
+custom K=1                1           0.468       1.24        5040533     OK
+custom K=2                2           0.472       1.25        5040533     OK
+custom K=4                4           0.478       1.27        5040533     OK
+custom K=8                8           0.392       1.04        5040533     OK
+custom K=16               16          0.377       1.00        5040533     OK
+custom K=32               32          0.568       1.51        5040533     OK
+custom K=128              128         2.260       5.99        5040533     OK
+custom K=256              256         5.137       13.63       5040533     OK
+custom K=512              512         8.796       23.33       5040533     OK
+custom K=1024             1024        20.517      54.42       5040533     OK
+Best K = 16 (0.377 ms), hardware threads = 8, K / hardware threads = 2.00
+
+Sequence size: 1000000
+Algorithm                 Threads     Time, ms    x best K    Result      Check
+std::reduce (no policy)   1           2.107       -           50545948    OK
+std::reduce (seq)         1           2.687       -           50545948    OK
+std::reduce (unseq)       1           3.405       -           50545948    OK
+std::reduce (par)         auto        0.963       -           50545948    OK
+std::reduce (par_unseq)   auto        1.116       -           50545948    OK
+custom K=1                1           2.413       2.19        50545948    OK
+custom K=2                2           1.421       1.29        50545948    OK
+custom K=4                4           1.206       1.09        50545948    OK
+custom K=8                8           1.241       1.13        50545948    OK
+custom K=16               16          2.372       2.15        50545948    OK
+custom K=32               32          1.103       1.00        50545948    OK
+custom K=128              128         2.487       2.25        50545948    OK
+custom K=256              256         3.303       2.99        50545948    OK
+custom K=512              512         9.474       8.59        50545948    OK
+custom K=1024             1024        18.768      17.02       50545948    OK
+Best K = 32 (1.103 ms), hardware threads = 8, K / hardware threads = 4.00
+
+Sequence size: 10000000
+Algorithm                 Threads     Time, ms    x best K    Result      Check
+std::reduce (no policy)   1           19.274      -           505095805   OK
+std::reduce (seq)         1           22.390      -           505095805   OK
+std::reduce (unseq)       1           29.882      -           505095805   OK
+std::reduce (par)         auto        4.830       -           505095805   OK
+std::reduce (par_unseq)   auto        6.444       -           505095805   OK
+custom K=1                1           22.436      4.45        505095805   OK
+custom K=2                2           11.434      2.27        505095805   OK
+custom K=4                4           6.048       1.20        505095805   OK
+custom K=8                8           5.283       1.05        505095805   OK
+custom K=16               16          5.042       1.00        505095805   OK
+custom K=32               32          5.129       1.02        505095805   OK
+custom K=128              128         6.091       1.21        505095805   OK
+custom K=256              256         15.127      3.00        505095805   OK
+custom K=512              512         14.666      2.91        505095805   OK
+custom K=1024             1024        19.106      3.79        505095805   OK
+Best K = 16 (5.042 ms), hardware threads = 8, K / hardware threads = 2.00
+
+Done. Results saved to results_O3.txt
