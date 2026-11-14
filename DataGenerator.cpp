@@ -5,7 +5,7 @@
 #include <stdexcept>
 
 Data DataGenerator::generate(std::size_t size) {
-    std::mt19937_64 gen(kSeed);
+    std::mt19937_64 gen(kSeed + size);
     std::uniform_int_distribution<Int> dist(kMinValue, kMaxValue);
     Data data(size);
     for (auto& v : data) v = dist(gen);
@@ -17,6 +17,7 @@ void DataGenerator::saveToFile(const Data& data, const std::string& filename) {
     if (!out) throw std::runtime_error("cannot create file: " + filename);
     out << data.size() << "\n";
     for (auto v : data) out << v << ' ';
+    out << "\n";
 }
 
 Data DataGenerator::loadFromFile(const std::string& filename) {
