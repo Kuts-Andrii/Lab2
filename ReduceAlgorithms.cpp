@@ -30,6 +30,7 @@ Int ReduceAlgorithms::customParallel(const Data& data, int parts) {
                 partial[i] = std::reduce(std::execution::seq, first, last, Int{0});
             });
         } catch (const std::system_error&) {
+            // Fallback: current thread
             partial[i] = std::reduce(std::execution::seq, first, last, Int{0});
         }
         offset += len;
