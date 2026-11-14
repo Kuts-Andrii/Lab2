@@ -1,4 +1,4 @@
-// Lab 2, Andrii Kuts, K-28, Compiler: g++-15, C++20
+// Lab 2, variant 13, Andrii Kuts, K-28, Compiler: g++-15, C++20
 
 #include <algorithm>
 #include <chrono>
@@ -9,6 +9,7 @@
 #include <iostream>
 #include <numeric>
 #include <set>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -18,33 +19,23 @@
 
 namespace {
 const std::vector<std::size_t> kSizes = {100'000, 1'000'000, 10'000'000};
-const std::string kDataDir = "data";
-constexpr int kRuns = 5;
+constexpr int kRuns = 15;
 constexpr int kDefaultHardwareThreads = 4;
-constexpr int kLargeK[] = {128, 256, 512, 1024};
+constexpr int kMaxK = 1024;
+// Thread count for par / par_unseq
+constexpr int kAutoThreads = 0;
 constexpr int kNameWidth = 26;
 constexpr int kColWidth = 12;
 }
 
-// Пишем сразу в консоль и в файл
-class Tee {
-public:
-    Tee(std::ostream& a, std::ostream& b) : a_(a), b_(b) {}
-
-    template <typename T>
-    Tee& operator<<(const T& v) {
-        a_ << v;
-        b_ << v;
-        return *this;
-    }
-
-private:
-    std::ostream& a_;
-    std::ostream& b_;
+struct BenchTask {
+    std::string name;
+    int threads;
+    bool custom;
+    std::function<Int()> run;
 };
 
 struct BenchResult {
-    std::size_t size;
     std::string name;
     int threads;
     bool custom;
@@ -53,139 +44,163 @@ struct BenchResult {
     bool correct;
 };
 
+using Results = std::vector<BenchResult>;
+
 class ExperimentRunner {
 public:
-    static std::vector<BenchResult> runAll(const Data& data, int hardwareThreads) {
+    static Results runAll(const Data& data, int hw) {
         const Int expected = std::accumulate(data.begin(), data.end(), Int{0});
-        std::vector<BenchResult> results;
-        runStandard(data, expected, results);
-        runCustom(data, expected, hardwareThreads, results);
+        Results results;
+        for (const auto& task : buildTasks(data, hw)) {
+            results.push_back(measure(task, expected));
+        }
         return results;
     }
 
-    static std::vector<int> buildKValues(int hw) {
-        std::set<int> ks = {1, 2, 4, std::max(1, hw / 2), hw, hw * 2, hw * 4};
-        ks.insert(std::begin(kLargeK), std::end(kLargeK));
-        return {ks.begin(), ks.end()};
-    }
-
-    static const BenchResult* bestCustom(const std::vector<BenchResult>& results) {
+    static const BenchResult* bestCustom(const Results& results) {
         const BenchResult* best = nullptr;
-        for (const auto& r : results)
+        for (const auto& r : results) {
             if (r.custom && (best == nullptr || r.timeMs < best->timeMs)) best = &r;
+        }
         return best;
     }
 
 private:
-    static BenchResult measure(const std::string& name, std::size_t size, int threads, bool custom,
-                               const std::function<Int()>& task, Int expected) {
-        volatile Int sink = task();
+    static std::vector<BenchTask> buildTasks(const Data& data, int hw) {
+        namespace ex = std::execution;
+        const auto noPolicy = [&data] { return ReduceAlgorithms::noPolicy(data); };
+        const auto policy = [&data](auto p) {
+            return [&data, p] { return ReduceAlgorithms::withPolicy(data, p); };
+        };
+
+        std::vector<BenchTask> tasks = {
+            {"std::reduce (no policy)", 1, false, noPolicy},
+            {"std::reduce (seq)", 1, false, policy(ex::seq)},
+            {"std::reduce (unseq)", 1, false, policy(ex::unseq)},
+            {"std::reduce (par)", kAutoThreads, false, policy(ex::par)},
+            {"std::reduce (par_unseq)", kAutoThreads, false, policy(ex::par_unseq)},
+        };
+
+        for (int k : buildKValues(hw)) {
+            const auto run = [&data, k] { return ReduceAlgorithms::customParallel(data, k); };
+            tasks.push_back({"custom K=" + std::to_string(k), k, true, run});
+        }
+        return tasks;
+    }
+
+    // Powers of 2 and multiples of hw
+    static std::vector<int> buildKValues(int hw) {
+        std::set<int> ks = {std::max(1, hw / 2), hw, hw * 2, hw * 4};
+        for (int k = 1; k <= kMaxK; k *= 2) ks.insert(k);
+        return {ks.begin(), ks.end()};
+    }
+
+    // Warm-up, then median
+    static BenchResult measure(const BenchTask& task, Int expected) {
+        volatile Int sink = task.run();
         (void)sink;
 
         std::vector<double> times;
         times.reserve(kRuns);
         Int result = 0;
+        bool correct = true;
         for (int i = 0; i < kRuns; ++i) {
             const auto start = std::chrono::steady_clock::now();
-            result = task();
+            result = task.run();
             const auto stop = std::chrono::steady_clock::now();
             times.push_back(std::chrono::duration<double, std::milli>(stop - start).count());
+            correct = correct && result == expected;
         }
-        std::sort(times.begin(), times.end());
-        return {size, name, threads, custom, times[times.size() / 2], result, result == expected};
-    }
 
-    static void runStandard(const Data& data, Int expected, std::vector<BenchResult>& out) {
-        const auto n = data.size();
-        out.push_back(measure("std::reduce (no policy)", n, 1, false,
-                              [&] { return ReduceAlgorithms::noPolicy(data); }, expected));
-        out.push_back(measure("std::reduce (seq)", n, 1, false,
-                              [&] { return ReduceAlgorithms::withPolicy(data, std::execution::seq); }, expected));
-        out.push_back(measure("std::reduce (unseq)", n, 1, false,
-                              [&] { return ReduceAlgorithms::withPolicy(data, std::execution::unseq); }, expected));
-        out.push_back(measure("std::reduce (par)", n, 0, false,
-                              [&] { return ReduceAlgorithms::withPolicy(data, std::execution::par); }, expected));
-        out.push_back(measure("std::reduce (par_unseq)", n, 0, false,
-                              [&] { return ReduceAlgorithms::withPolicy(data, std::execution::par_unseq); }, expected));
-    }
-
-    static void runCustom(const Data& data, Int expected, int hw, std::vector<BenchResult>& out) {
-        for (int k : buildKValues(hw)) {
-            out.push_back(measure("custom K=" + std::to_string(k), data.size(), k, true,
-                                  [&] { return ReduceAlgorithms::customParallel(data, k); }, expected));
-        }
+        std::ranges::sort(times);
+        const double median = times[times.size() / 2];
+        return {task.name, task.threads, task.custom, median, result, correct};
     }
 };
 
 class ReportWriter {
 public:
-    // Теперь шаблон — принимает и std::ostream, и Tee
-    template <typename Stream>
-    static void printEnvironment(Stream& os, int hw, const std::string& label) {
-#if defined(_MSC_VER)
-        os << "Compiler: MSVC " << _MSC_FULL_VER << "\n";
-#else
+    static void printEnvironment(std::ostream& os, int hw) {
         os << "Compiler: " << __VERSION__ << "\n";
-#endif
-        os << "Run: " << label << ", hardware threads: " << hw << "\n"
-           << "Time = median of " << kRuns
-           << " runs of one reduce call, ms (data loading not included)\n";
+        os << "Build: " << buildInfo() << ", hardware threads: " << hw << "\n";
+        os << "Time = median of " << kRuns << " runs of one reduce call, ms";
+        os << " (data loading not included)\n";
     }
 
-    template <typename Stream>
-    static void printTable(Stream& os, std::size_t size, const std::vector<BenchResult>& results) {
+    // x best K = time / best K time
+    static void printTable(std::ostream& os, std::size_t size, const Results& results) {
         const auto* best = ExperimentRunner::bestCustom(results);
-        os << "\nSequence size: " << size << "\n"
-           << std::left << std::setw(kNameWidth) << "Algorithm"
-           << std::setw(kColWidth) << "Threads"
-           << std::setw(kColWidth) << "Time, ms"
-           << std::setw(kColWidth) << "x best K"
-           << std::setw(kColWidth) << "Result" << "Check\n";
-
-        for (const auto& r : results) {
-            os << std::left << std::setw(kNameWidth) << r.name
-               << std::setw(kColWidth) << threadsLabel(r)
-               << std::setw(kColWidth) << std::fixed << std::setprecision(3) << r.timeMs;
-            if (r.custom && best != nullptr)
-                os << std::setw(kColWidth) << std::setprecision(2) << r.timeMs / best->timeMs;
-            else
-                os << std::setw(kColWidth) << "-";
-            os << std::setw(kColWidth) << r.value << (r.correct ? "OK" : "ERROR") << "\n";
-        }
+        os << "\nSequence size: " << size << "\n";
+        printHeader(os);
+        for (const auto& r : results) printRow(os, r, best);
     }
 
-    template <typename Stream>
-    static void printBestK(Stream& os, const std::vector<BenchResult>& results, int hw) {
+    static void printBestK(std::ostream& os, const Results& results, int hw) {
         const auto* best = ExperimentRunner::bestCustom(results);
         if (best == nullptr) return;
-        os << "Best K = " << best->threads << " (" << std::fixed << std::setprecision(3)
-           << best->timeMs << " ms), hardware threads = " << hw
-           << ", K / hardware threads = " << std::setprecision(2)
-           << static_cast<double>(best->threads) / hw << "\n";
-    }
-
-    // Отдельный файл с таблицей — обычный std::ostream
-    static void saveResults(const std::vector<BenchResult>& results, const std::string& filename) {
-        std::ofstream out(filename);
-        out << std::left << std::setw(kNameWidth) << "Algorithm"
-            << std::setw(kColWidth) << "Threads"
-            << std::setw(kColWidth) << "Time_ms"
-            << std::setw(kColWidth) << "Result"
-            << "Check\n";
-        for (const auto& r : results) {
-            out << std::left << std::setw(kNameWidth) << r.name
-                << std::setw(kColWidth) << threadsLabel(r)
-                << std::setw(kColWidth) << std::fixed << std::setprecision(3) << r.timeMs
-                << std::setw(kColWidth) << r.value
-                << (r.correct ? "OK" : "ERROR") << "\n";
-        }
+        const double ratio = static_cast<double>(best->threads) / hw;
+        os << "Best K = " << best->threads << " (" << formatNumber(best->timeMs, 3) << " ms)";
+        os << ", hardware threads = " << hw;
+        os << ", K / hardware threads = " << formatNumber(ratio, 2) << "\n";
     }
 
 private:
+    static std::string buildInfo() {
+        std::string info = std::string("-") + OPT_LABEL;
+#ifdef NDEBUG
+        info += ", Release (NDEBUG)";
+#else
+        info += ", not Release (NDEBUG undefined)";
+#endif
+#ifdef __OPTIMIZE__
+        info += ", optimization ON";
+#else
+        info += ", optimization OFF";
+#endif
+        return info;
+    }
+
+    static std::string formatNumber(double value, int precision) {
+        std::ostringstream ss;
+        ss << std::fixed << std::setprecision(precision) << value;
+        return ss.str();
+    }
+
     static std::string threadsLabel(const BenchResult& r) {
-        return r.threads == 0 ? "auto" : std::to_string(r.threads);
+        return r.threads == kAutoThreads ? "auto" : std::to_string(r.threads);
+    }
+
+    static std::string ratioLabel(const BenchResult& r, const BenchResult* best) {
+        if (!r.custom || best == nullptr) return "-";
+        return formatNumber(r.timeMs / best->timeMs, 2);
+    }
+
+    static void printHeader(std::ostream& os) {
+        os << std::left;
+        os << std::setw(kNameWidth) << "Algorithm";
+        os << std::setw(kColWidth) << "Threads";
+        os << std::setw(kColWidth) << "Time, ms";
+        os << std::setw(kColWidth) << "x best K";
+        os << std::setw(kColWidth) << "Result";
+        os << "Check\n";
+    }
+
+    static void printRow(std::ostream& os, const BenchResult& r, const BenchResult* best) {
+        os << std::left;
+        os << std::setw(kNameWidth) << r.name;
+        os << std::setw(kColWidth) << threadsLabel(r);
+        os << std::setw(kColWidth) << formatNumber(r.timeMs, 3);
+        os << std::setw(kColWidth) << ratioLabel(r, best);
+        os << std::setw(kColWidth) << r.value;
+        os << (r.correct ? "OK" : "ERROR") << "\n";
     }
 };
+
+// Console + file
+static void emit(std::ostream& log, const std::string& text) {
+    std::cout << text << std::flush;
+    log << text;
+}
 
 static int detectHardwareThreads() {
     const unsigned n = std::thread::hardware_concurrency();
@@ -193,7 +208,7 @@ static int detectHardwareThreads() {
 }
 
 static Data loadOrGenerate(std::size_t size) {
-    const std::string path = kDataDir + "/data_" + std::to_string(size) + ".txt";
+    const std::string path = std::string(DATA_DIR) + "/data_" + std::to_string(size) + ".txt";
     if (!std::filesystem::exists(path)) {
         std::cerr << "Generating " << size << " elements -> " << path << "\n";
         DataGenerator::saveToFile(DataGenerator::generate(size), path);
@@ -201,32 +216,28 @@ static Data loadOrGenerate(std::size_t size) {
     return DataGenerator::loadFromFile(path);
 }
 
-int main(int argc, char** argv) {
+int main() {
     try {
-        const std::string label = argc > 1 ? argv[1] : "run";
         const int hw = detectHardwareThreads();
+        std::filesystem::create_directories(DATA_DIR);
 
-        std::filesystem::create_directories(kDataDir);
+        const std::string logFile = std::string(OUTPUT_DIR) + "/out_" + OPT_LABEL + ".txt";
+        std::ofstream log(logFile);
 
-        // Полный лог: консоль + out_<label>.txt
-        std::ofstream log("out_" + label + ".txt");
-        Tee out(std::cout, log);
+        std::ostringstream header;
+        ReportWriter::printEnvironment(header, hw);
+        emit(log, header.str());
 
-        ReportWriter::printEnvironment(out, hw, label);
-
-        std::vector<BenchResult> all;
         for (std::size_t size : kSizes) {
             const auto data = loadOrGenerate(size);
             const auto results = ExperimentRunner::runAll(data, hw);
-            ReportWriter::printTable(out, size, results);
-            ReportWriter::printBestK(out, results, hw);
-            all.insert(all.end(), results.begin(), results.end());
+            std::ostringstream table;
+            ReportWriter::printTable(table, size, results);
+            ReportWriter::printBestK(table, results, hw);
+            emit(log, table.str());
         }
 
-        // Таблица результатов в отдельный txt
-        const std::string resultsFile = "results_" + label + ".txt";
-        ReportWriter::saveResults(all, resultsFile);
-        out << "\nDone. Results saved to " << resultsFile << "\n";
+        emit(log, "\nDone. Output saved to " + logFile + "\n");
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << "\n";
         return 1;
